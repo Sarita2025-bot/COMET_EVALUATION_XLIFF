@@ -27,24 +27,22 @@ from mqxliff_comet_to_xlsx import (
 # Import COMET functions directly (not through wrapper that might have input())
 from comet import download_model, load_from_checkpoint  # type: ignore
 
-# Try to load environment variables from .env file if it exists
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
 # ========== CRASH CATCHER: Wrap entire app in try/except ==========
 try:
     # Heartbeat - confirms app started successfully
     st.write("App started ✅")  # Keep this at the top as a heartbeat
     
-    # ========== Handle HF_TOKEN from Streamlit Secrets ==========
-    # On Streamlit Cloud, use secrets instead of .env file
-    # Set HF_TOKEN in Streamlit Cloud: Settings > Secrets > Add secret
+    # ========== Handle HF_TOKEN from Streamlit Secrets (Cloud-friendly) ==========
+    # Priority order: Streamlit Secrets > Environment Variable > Manual input
+    # On Streamlit Cloud, set HF_TOKEN in: Settings > Secrets > Add secret
+    # Do NOT use .env file (gitignored, won't work in Cloud)
+    hf_token_set = False
     if "HF_TOKEN" in st.secrets:
         os.environ["HF_TOKEN"] = st.secrets["HF_TOKEN"]
-        # Token is now available for COMET model downloads
+        hf_token_set = True
+    elif os.getenv("HF_TOKEN"):
+        # Environment variable might be set by Streamlit Cloud or system
+        hf_token_set = True
     
     # Page configuration
     st.set_page_config(
@@ -88,13 +86,17 @@ try:
         IMPORTANT: This function is ONLY called when user clicks the button,
         NOT at import time or during startup. This prevents health-check kills.
         
+        Token is obtained from (in order):
+        1. Streamlit Secrets (st.secrets["HF_TOKEN"])
+        2. Environment variable (os.getenv("HF_TOKEN"))
+        3. Manual input from sidebar (handled in UI)
+        
         Returns:
             Loaded COMET model or None if error
         """
         try:
-            # Check for token (from secrets, .env, or environment)
-            if not os.getenv("HF_TOKEN") and "HF_TOKEN" not in st.secrets:
-                st.warning("⚠️ No HF_TOKEN found. Set it in Streamlit Secrets or .env file.")
+            # Check for token - don't warn here, let the UI handle it
+            # Token should be set from secrets or environment before calling this
             
             # Download and load model
             model_path = download_model(COMET_MODEL_NAME)
@@ -102,7 +104,13 @@ try:
             return model
         except Exception as e:
             st.error(f"Error loading COMET model: {str(e)}")
-            st.info("Make sure you're logged into Hugging Face: `hf auth login` or set HF_TOKEN in Streamlit Secrets")
+            st.info("""
+            **Troubleshooting:**
+            - Set HF_TOKEN in Streamlit Cloud: Settings > Secrets
+            - Or set as environment variable in Streamlit Cloud settings
+            - Or enter token manually in the sidebar
+            - Get token from: https://huggingface.co/settings/tokens
+            """)
             return None
     
     
@@ -172,23 +180,36 @@ try:
         
         st.header("🔐 Authentication")
         
-        # Check if token is available from secrets
+        # Check token status (from secrets or environment)
         token_from_secrets = "HF_TOKEN" in st.secrets
+        token_from_env = bool(os.getenv("HF_TOKEN"))
+        
         if token_from_secrets:
             st.success("✅ HF_TOKEN found in Streamlit Secrets")
+        elif token_from_env:
+            st.success("✅ HF_TOKEN found in environment variables")
         else:
-            st.info("💡 Set HF_TOKEN in Streamlit Cloud Secrets for automatic authentication")
+            st.warning("⚠️ No HF_TOKEN configured")
+            st.info("""
+            **For Streamlit Cloud:**
+            1. Go to Settings > Secrets
+            2. Add: `HF_TOKEN = "your_token_here"`
+            
+            **For local development:**
+            - Set environment variable: `$env:HF_TOKEN="your_token"`
+            - Or enter token manually below
+            """)
         
-        # Allow manual token entry as fallback
+        # Allow manual token entry as fallback (for local dev or if secrets not set)
         hf_token = st.text_input(
-            "Hugging Face Token (optional - manual entry)",
+            "Hugging Face Token (manual entry - if not in Secrets)",
             type="password",
-            help="Set HF_TOKEN here or use Streamlit Secrets or .env file"
+            help="Enter token here if not set in Streamlit Secrets. Get token from: https://huggingface.co/settings/tokens"
         )
         
         if hf_token:
             os.environ['HF_TOKEN'] = hf_token
-            st.success("Token set!")
+            st.success("Token set via manual input!")
     
     # Main content area
     st.header("📁 Upload XLIFF File")
