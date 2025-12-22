@@ -1,0 +1,19 @@
+# Streamlit configuration
+# This file configures Streamlit to show full error details for debugging
+
+[client]
+# Show full error details in the UI (useful for debugging)
+showErrorDetails = true
+
+[server]
+# Allow file uploads up to 200MB (adjust as needed for large XLIFF files)
+maxUploadSize = 200
+
+[theme]
+# Optional: customize theme
+primaryColor = "#1f77b4"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#262730"
+font = "sans serif"
+
