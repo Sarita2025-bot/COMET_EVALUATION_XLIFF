@@ -231,6 +231,3 @@ def main():
     input("Press Enter to close...")
 
 
-
-if __name__ == "__main__":
-    main()
