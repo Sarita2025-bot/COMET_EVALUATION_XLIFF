@@ -117,7 +117,7 @@ with st.sidebar:
         st.info('Add it in Streamlit Cloud → App settings → Secrets:  HF_TOKEN = "hf_..."')
 
     st.header("⚙️ Settings")
-    batch_size = st.number_input("Batch size", min_value=1, max_value=64, value=8)
+    batch_size = st.number_input("Batch size", min_value=1, max_value=500, value=8)
 
 st.header("📁 Upload XLIFF file")
 uploaded_file = st.file_uploader(
