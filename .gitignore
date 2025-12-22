@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.log
+RAW_MT/OUTPUT/*.xlsx
+RAW_MT/OUTPUT/*.txt
+MTPE_EVAL/*.xlsx
+MTPE_EVAL/*.mqxliff
+MTPE_EVAL/*.mqxlz
+MTPE_EVAL/*.txt
+MTPE_EVAL/*.docx
+
+# Temporary files
+-NOUSE.py
+*.tmp
+*.temp
+
+# Model cache (can be large)
+.cache/
+models/
+*.bin
+*.safetensors
+

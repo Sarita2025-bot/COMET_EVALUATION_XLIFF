@@ -1,0 +1,16 @@
+Globalese-COMET-KIWI-eval-EN-DE
+Scores computed successfully!
+  - Score range: 0.5489 - 0.8759
+  - Average score: 0.7995
+
+
+Globalese-COMET-KIWI-eval-EN-ES.
+- Scores computed successfully!
+  - Score range: 0.3728 - 0.8955
+  - Average score: 0.8077
+
+
+Globalese-COMET-KIWI-eval-EN-FR
+  - Scores computed successfully!
+  - Score range: 0.5075 - 0.8956
+  - Average score: 0.8327

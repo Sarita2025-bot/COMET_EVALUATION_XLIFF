@@ -1,0 +1,45 @@
+# COMET MT Evaluation Dependencies
+# 
+# unbabel-comet: Main package for COMET metric evaluation
+#   - Provides the COMET model and prediction functionality
+#   - Includes support for various COMET models including wmt22-comet-da
+#
+# pandas: Data manipulation library for reading/writing Excel files
+#   - Used to read input Excel files and write output files
+#   - Handles Excel file format (.xlsx) operations
+#
+# openpyxl: Excel file format support for pandas
+#   - Required by pandas to read and write .xlsx files
+#   - Provides low-level Excel file handling
+#
+# numpy: Numerical computing library (required by pandas)
+#   - Core dependency for pandas data manipulation
+#   - Must be explicitly installed to avoid import conflicts
+
+unbabel-comet>=2.0.0
+
+pandas>=1.5.0
+openpyxl>=3.0.0
+numpy>=1.21.0,<2.0.0
+python-dotenv>=0.19.0
+
+huggingface-hub>=0.34.0
+transformers>=4.45.0
+sentencepiece>=0.2.0
+tqdm>=4.67.0
+matplotlib>=3.8.0
+scikit-learn>=1.5.0
+scipy>=1.13.0
+
+# torch stack (pin to matching versions)
+torch==2.3.1
+torchvision==0.18.1
+torchaudio==2.3.1
+
+# pandas-profiling was renamed
+ydata-profiling>=4.0.0
+
+# Streamlit for web UI
+streamlit>=1.28.0
+
+
