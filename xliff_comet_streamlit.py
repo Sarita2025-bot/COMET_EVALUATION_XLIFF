@@ -14,9 +14,9 @@ import tempfile
 import os
 from pathlib import Path
 import io
-from xliff_run_comet_evaluation import (
+from mqxliff_comet_to_xlsx import (
     load_comet_model,
-    parse_xliff_file,
+    parse_mqxliff,
     COMET_MODEL_NAME
 )
 
@@ -95,7 +95,8 @@ def process_xliff_with_streamlit(model, uploaded_file):
         # Parse XLIFF file
         with st.spinner("Parsing XLIFF file..."):
             try:
-                extracted_data, source_lang, target_lang = parse_xliff_file(tmp_path)
+                # Use parse_mqxliff from mqxliff_comet_to_xlsx.py
+                extracted_data, source_lang, target_lang = parse_mqxliff(Path(tmp_path))
             except Exception as e:
                 st.error(f"Error parsing XLIFF file: {str(e)}")
                 st.info("Please check that the file is a valid memoQ XLIFF file.")
@@ -252,8 +253,15 @@ def main():
                 
                 # Data preview
                 st.header("📋 Results Preview")
+                # Select columns to display (handle both old and new column sets)
+                preview_cols = ['source', 'mt', 'ref', 'comet_score']
+                if 'trans_unit_id' in df.columns:
+                    preview_cols.insert(0, 'trans_unit_id')
+                if 'mt_provider' in df.columns:
+                    preview_cols.insert(-1, 'mt_provider')
+                
                 st.dataframe(
-                    df[['source', 'mt', 'ref', 'comet_score']].head(10),
+                    df[preview_cols].head(10),
                     use_container_width=True,
                     hide_index=True
                 )
