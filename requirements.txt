@@ -32,9 +32,10 @@ scikit-learn>=1.5.0
 scipy>=1.13.0
 
 # torch stack (pin to matching versions)
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.3.1
-torchvision==0.18.1
-torchaudio==2.3.1
+
+
 
 # pandas-profiling was renamed
 ydata-profiling>=4.0.0

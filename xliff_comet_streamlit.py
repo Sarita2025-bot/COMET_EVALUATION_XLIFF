@@ -137,72 +137,55 @@ if not run:
     st.stop()
 
 # ---- Everything below is inside the button action, with explicit crash reporting ----
+# ---- Everything below is inside the button action, with explicit crash reporting ----
 tmp_path = None
 try:
+    print("STEP 0: button clicked", flush=True)
+
     apply_hf_token_from_secrets_or_env()
+    print("STEP 1: HF_TOKEN applied", flush=True)
 
     with st.spinner("Loading COMET model (first run may take a few minutes)..."):
+        print("STEP 2: loading COMET model", flush=True)
         model = get_comet_model_cached()
+        print("STEP 3: COMET model loaded", flush=True)
 
     # Save upload to a temp path for ElementTree parsing
     suffix = Path(uploaded_file.name).suffix
+    print("STEP 4: creating temp file", flush=True)
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
         tmp_file.write(uploaded_file.getvalue())
         tmp_path = Path(tmp_file.name)
 
+    print(f"STEP 5: temp file written to {tmp_path}", flush=True)
+
     with st.spinner("Parsing XLIFF..."):
+        print("STEP 6: parsing mqxliff", flush=True)
         extracted_data, source_lang, target_lang = parse_mqxliff(tmp_path)
+        print(f"STEP 7: parsed rows = {len(extracted_data)}", flush=True)
 
     if not extracted_data:
         st.warning("No valid translation units extracted.")
-        st.info("Check that the file contains mq:status='ManuallyConfirmed' and MT in mq:insertedmatch.")
         st.stop()
 
     df = pd.DataFrame(extracted_data)
-    if source_lang:
-        df["source_language"] = source_lang
-    if target_lang:
-        df["target_language"] = target_lang
+    print("STEP 8: dataframe created", flush=True)
 
-    data = [{"src": r["source"], "mt": r["mt"], "ref": r["ref"]} for r in df.to_dict("records")]
+    data = [
+        {"src": r["source"], "mt": r["mt"], "ref": r["ref"]}
+        for r in df.to_dict("records")
+    ]
+    print(f"STEP 9: prepared COMET input ({len(data)} rows)", flush=True)
 
     with st.spinner(f"Scoring {len(data)} segments with COMET..."):
+        print("STEP 10: starting COMET predict()", flush=True)
         model_output = model.predict(data, batch_size=int(batch_size), gpus=0)
+        print("STEP 11: COMET predict() finished", flush=True)
 
     df["comet_score"] = model_output["scores"]
+    print("STEP 12: scores attached to dataframe", flush=True)
 
-    # Stats
-    scores = df["comet_score"].tolist()
     st.success("✅ Evaluation complete!")
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Units", len(df))
-    c2.metric("Avg", f"{(sum(scores)/len(scores)):.4f}")
-    c3.metric("Min", f"{min(scores):.4f}")
-    c4.metric("Max", f"{max(scores):.4f}")
-
-    if source_lang and target_lang:
-        st.info(f"🌐 Language pair: **{source_lang} → {target_lang}**")
-
-    st.subheader("Preview")
-    preview_cols = ["source", "mt", "ref", "comet_score"]
-    for extra in ["trans_unit_id", "mt_provider", "segmentguid"]:
-        if extra in df.columns and extra not in preview_cols:
-            preview_cols.insert(0, extra)
-
-    st.dataframe(df[preview_cols].head(20), use_container_width=True, hide_index=True)
-
-    st.subheader("Download")
-    out_name = f"{Path(uploaded_file.name).stem}_comet_scores.xlsx"
-    xlsx_bytes = df_to_xlsx_bytes(df)
-
-    st.download_button(
-        "📥 Download Excel",
-        data=xlsx_bytes,
-        file_name=out_name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
 
 except Exception:
     st.error("🚨 The app crashed during processing. Full traceback:")
@@ -213,5 +196,7 @@ finally:
     if tmp_path and tmp_path.exists():
         try:
             os.unlink(tmp_path)
+            print("STEP 13: temp file cleaned up", flush=True)
         except Exception:
             pass
+
