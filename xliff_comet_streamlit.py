@@ -400,7 +400,7 @@ except Exception as e:
     st.info("""
     **Troubleshooting:**
     - Check that all dependencies are installed
-    - Verify Hugging Face token is set (Streamlit Secrets or .env)
+    - Verify Hugging Face token is set (Streamlit Secrets or environment variable)
     - Ensure the XLIFF file is valid
     - Check Streamlit logs for more details
     """)
