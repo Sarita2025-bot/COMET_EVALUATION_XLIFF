@@ -1,26 +1,39 @@
 """
 Streamlit UI for COMET MT Evaluation of memoQ XLIFF Files
+
+- Upload memoQ mqxliff/xliff
+- Parse source / MT / ref
+- Score with COMET
+- Download XLSX
+
+Notes:
+- Streamlit Cloud free tier often has ~1GB RAM. wmt22-comet-da can OOM.
+  If it crashes during model load, use a smaller model like wmt20-comet-da.
 """
 
+from __future__ import annotations
+
 import os
-import gc
-import traceback
 import tempfile
-from pathlib import Path
+import traceback
 from io import BytesIO
+from pathlib import Path
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
-import torch
-from comet import download_model, load_from_checkpoint  # type: ignore
+# --------- IMPORTANT: choose a smaller model for Streamlit Cloud ----------
+# Try this first on Streamlit Cloud:
+COMET_MODEL_NAME = "Unbabel/wmt20-comet-da"  # smaller, more deployable
+# If you have enough RAM elsewhere, you can switch back:
+# COMET_MODEL_NAME = "Unbabel/wmt22-comet-da"
 
-from mqxliff_comet_to_xlsx import (
-    parse_mqxliff,
-    COMET_MODEL_NAME,
-)
 
-# ----------------- Page config (MUST be before other Streamlit calls) -----------------
+# Import your parser (must NOT load COMET at import time)
+from mqxliff_comet_to_xlsx import parse_mqxliff  # noqa: E402
+
+
+# Must be the first Streamlit command
 st.set_page_config(
     page_title="COMET XLIFF Evaluator",
     page_icon="📊",
@@ -28,39 +41,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.write("App started ✅")  # heartbeat
-
-
-def apply_hf_token_from_secrets_or_env() -> None:
-    """
-    Ensure HF_TOKEN is set in environment.
-    Priority: Streamlit secrets -> already-set env var -> manual UI input (sidebar)
-    """
-    if "HF_TOKEN" in st.secrets and st.secrets["HF_TOKEN"]:
-        os.environ["HF_TOKEN"] = st.secrets["HF_TOKEN"]
-
-
-@st.cache_resource(show_spinner=False)
-def get_comet_model_cached():
-    """
-    Load COMET model once per Streamlit server process.
-    This MUST be light on CPU/RAM to avoid Cloud kills.
-    """
-    print("MODEL: start load", flush=True)
-
-    # Reduce CPU thrash and memory spikes
-    torch.set_num_threads(1)
-    torch.set_grad_enabled(False)
-
-    model_path = download_model(COMET_MODEL_NAME)
-    model = load_from_checkpoint(model_path)
-    model.eval()
-
-    # Encourage garbage collection
-    gc.collect()
-
-    print("MODEL: loaded OK", flush=True)
-    return model
+st.title("📊 COMET XLIFF Evaluator")
+st.caption(f"Model: `{COMET_MODEL_NAME}`")
 
 
 def df_to_xlsx_bytes(df: pd.DataFrame) -> bytes:
@@ -70,126 +52,140 @@ def df_to_xlsx_bytes(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-# ---------------- UI ----------------
-st.markdown("## 📊 COMET XLIFF Evaluator")
-st.markdown("Upload a memoQ `.mqxliff` / `.xliff` file and score MT vs post-edited reference using COMET.")
+def _apply_hf_token_from_secrets_or_env() -> None:
+    # Streamlit Secrets -> env var
+    if "HF_TOKEN" in st.secrets and st.secrets["HF_TOKEN"]:
+        os.environ["HF_TOKEN"] = st.secrets["HF_TOKEN"]
+
+
+@st.cache_resource(show_spinner=False)
+def get_comet_model_cached(model_name: str):
+    """
+    Load COMET model ONCE per app process.
+    Import COMET inside the function so it doesn't load torch at import time.
+    """
+    from comet import download_model, load_from_checkpoint  # type: ignore
+
+    print(f"MODEL LOAD: starting download/load for {model_name}")
+    model_path = download_model(model_name)
+    print(f"MODEL LOAD: downloaded to {model_path}")
+    model = load_from_checkpoint(model_path)
+    print("MODEL LOAD: load_from_checkpoint done")
+    return model
+
 
 with st.sidebar:
-    st.header("🔐 Hugging Face Auth")
-
+    st.header("🔐 Auth")
+    st.write("HF token is required if the model is gated.")
+    token_ok = False
     if "HF_TOKEN" in st.secrets and st.secrets["HF_TOKEN"]:
         st.success("✅ HF_TOKEN found in Streamlit Secrets")
+        token_ok = True
     elif os.getenv("HF_TOKEN"):
-        st.success("✅ HF_TOKEN found in environment variables")
+        st.success("✅ HF_TOKEN found in environment")
+        token_ok = True
     else:
-        st.warning("⚠️ No HF_TOKEN detected yet")
-        st.info("Add HF_TOKEN in Streamlit Cloud → Settings → Secrets")
+        st.warning("⚠️ No HF_TOKEN found (may still work if model is public).")
 
-    manual_token = st.text_input("HF_TOKEN (manual, optional)", type="password")
-    if manual_token:
-        os.environ["HF_TOKEN"] = manual_token
-        st.success("Token set for this session ✅")
+    hf_token_manual = st.text_input(
+        "HF_TOKEN (manual override)",
+        type="password",
+        help="Only needed if the model requires authentication.",
+    )
+    if hf_token_manual:
+        os.environ["HF_TOKEN"] = hf_token_manual
+        token_ok = True
+        st.success("✅ Token set from manual input")
 
-    st.header("⚙️ Safety settings")
-    default_batch = st.number_input("Batch size (lower = safer)", min_value=1, max_value=32, value=1)
-    max_segments = st.number_input("Max segments to score (0 = no cap)", min_value=0, max_value=20000, value=1500)
+    st.header("⚙️ Settings")
+    batch_size = st.number_input(
+        "Batch size",
+        min_value=1,
+        max_value=64,
+        value=4,  # lower by default to reduce memory spikes
+        help="Lower batch size = less memory usage.",
+    )
 
+st.header("📁 Upload XLIFF")
 uploaded_file = st.file_uploader(
-    "Choose a memoQ XLIFF file (.mqxliff / .xliff / .xlf)",
+    "Upload a memoQ XLIFF (.mqxliff / .xliff / .xlf)",
     type=["mqxliff", "xliff", "xlf"],
 )
 
 if uploaded_file is None:
-    st.info("👆 Upload a file to begin.")
+    st.info("Upload a file to begin.")
     st.stop()
 
-st.success(f"✅ Uploaded: **{uploaded_file.name}** ({uploaded_file.size:,} bytes)")
+st.success(f"Uploaded: **{uploaded_file.name}** ({uploaded_file.size:,} bytes)")
 
-run = st.button("🚀 Evaluate Translation Quality", type="primary", use_container_width=True)
-if not run:
-    st.stop()
+# Button
+if st.button("🚀 Evaluate", type="primary", use_container_width=True):
+    try:
+        print("STEP 0: button clicked")
+        _apply_hf_token_from_secrets_or_env()
+        print("STEP 1: HF_TOKEN applied (if present)")
 
-tmp_path = None
-try:
-    print("STEP 0: button clicked", flush=True)
+        # Save upload to temp file
+        suffix = Path(uploaded_file.name).suffix
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(uploaded_file.getvalue())
+            tmp_path = Path(tmp.name)
 
-    apply_hf_token_from_secrets_or_env()
-    print("STEP 1: HF_TOKEN applied", flush=True)
-
-    # Load model ONLY after click
-    with st.spinner("Loading COMET model (first run can take a few minutes)..."):
-        print("STEP 2: loading COMET model", flush=True)
-        model = get_comet_model_cached()
-        print("STEP 3: COMET model loaded", flush=True)
-
-    # Write upload to temp file for XML parsers
-    suffix = Path(uploaded_file.name).suffix
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(uploaded_file.getvalue())
-        tmp_path = Path(tmp.name)
-
-    print(f"STEP 4: temp file written: {tmp_path}", flush=True)
-
-    with st.spinner("Parsing mqxliff..."):
-        print("STEP 5: parsing started", flush=True)
-        extracted_data, src_lang, tgt_lang = parse_mqxliff(tmp_path)
-        print(f"STEP 6: parsing done, rows={len(extracted_data)}", flush=True)
-
-    if not extracted_data:
-        st.warning("No valid translation units extracted.")
-        st.stop()
-
-    df = pd.DataFrame(extracted_data)
-    if src_lang:
-        df["source_language"] = src_lang
-    if tgt_lang:
-        df["target_language"] = tgt_lang
-
-    # Prepare COMET input
-    data = [{"src": r["source"], "mt": r["mt"], "ref": r["ref"]} for r in df.to_dict("records")]
-    print(f"STEP 7: prepared comet input rows={len(data)}", flush=True)
-
-    # Optional cap to prevent Cloud OOM
-    if int(max_segments) > 0 and len(data) > int(max_segments):
-        st.warning(f"⚠️ Capping scoring to first {int(max_segments)} segments (safety setting).")
-        data = data[: int(max_segments)]
-        df = df.iloc[: int(max_segments)].copy()
-
-    with st.spinner(f"Scoring {len(data)} segments..."):
-        print("STEP 8: predict() start", flush=True)
-        out = model.predict(data, batch_size=int(default_batch), gpus=0)
-        print("STEP 9: predict() done", flush=True)
-
-    df["comet_score"] = out["scores"]
-
-    st.success("✅ Done!")
-    if src_lang and tgt_lang:
-        st.info(f"🌐 Language pair: **{src_lang} → {tgt_lang}**")
-
-    st.metric("Segments scored", len(df))
-    st.metric("Average COMET", f"{df['comet_score'].mean():.4f}")
-
-    st.dataframe(df.head(20), use_container_width=True, hide_index=True)
-
-    xlsx_bytes = df_to_xlsx_bytes(df)
-    out_name = f"{Path(uploaded_file.name).stem}_comet_scores.xlsx"
-    st.download_button(
-        "📥 Download Excel",
-        data=xlsx_bytes,
-        file_name=out_name,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
-
-except Exception:
-    st.error("🚨 App crashed — traceback below")
-    st.code(traceback.format_exc())
-    raise
-
-finally:
-    if tmp_path and tmp_path.exists():
         try:
-            os.unlink(tmp_path)
-            print("CLEANUP: temp file removed", flush=True)
-        except Exception:
-            pass
+            print("STEP 2: parsing mqxliff")
+            with st.spinner("Parsing XLIFF..."):
+                extracted_data, source_lang, target_lang = parse_mqxliff(tmp_path)
+
+            if not extracted_data:
+                st.error("No valid translation units found.")
+                st.stop()
+
+            df = pd.DataFrame(extracted_data)
+            if source_lang:
+                df["source_language"] = source_lang
+            if target_lang:
+                df["target_language"] = target_lang
+
+            # Prepare COMET input
+            data = [{"src": r["source"], "mt": r["mt"], "ref": r["ref"]} for r in extracted_data]
+            print(f"STEP 3: prepared {len(data)} rows for COMET")
+
+            # Load model (cached)
+            print("STEP 4: loading COMET model (cached)")
+            with st.spinner("Loading COMET model (first time can be heavy)..."):
+                model = get_comet_model_cached(COMET_MODEL_NAME)
+
+            print("STEP 5: scoring")
+            with st.spinner("Scoring..."):
+                # CPU scoring; keep batch size conservative
+                model_out = model.predict(data, batch_size=int(batch_size), gpus=0)
+
+            scores = model_out["scores"]
+            df["comet_score"] = scores
+
+            st.success("✅ Done!")
+            st.write(f"Language pair: {source_lang} → {target_lang}" if source_lang and target_lang else "Language pair: (not found)")
+
+            st.dataframe(df.head(20), use_container_width=True, hide_index=True)
+
+            out_name = f"{Path(uploaded_file.name).stem}_comet_scores.xlsx"
+            st.download_button(
+                "📥 Download XLSX",
+                data=df_to_xlsx_bytes(df),
+                file_name=out_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
+        finally:
+            try:
+                if tmp_path.exists():
+                    os.unlink(tmp_path)
+            except Exception:
+                pass
+
+    except Exception as e:
+        st.error("🚨 App crashed with an exception:")
+        st.code(traceback.format_exc())
+        st.error(f"Error: {e}")
+        raise
