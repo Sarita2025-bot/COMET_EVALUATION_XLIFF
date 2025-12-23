@@ -18,9 +18,14 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import torch
+
 
 from comet import download_model, load_from_checkpoint  # type: ignore
 from mqxliff_comet_to_xlsx import parse_mqxliff, COMET_MODEL_NAME
+
+
+SKIP_MODEL = True  # DEBUG: set to False after testing
 
 
 # ✅ MUST be the first Streamlit call (before any st.write/st.markdown/etc.)
@@ -71,14 +76,24 @@ def require_password():
 
 
 # ---------- COMET model (cached) ----------
+
 @st.cache_resource
-def get_comet_model_cached():
-    """
-    Cached COMET model loader.
-    IMPORTANT: Must be "pure" (no st.* calls inside).
-    """
-    model_path = download_model(COMET_MODEL_NAME)
-    return load_from_checkpoint(model_path)
+def get_comet_model():
+    try:
+        # reduce CPU/RAM spikes
+        torch.set_num_threads(1)
+        torch.set_grad_enabled(False)
+
+        model_path = download_model(COMET_MODEL_NAME)
+        model = load_from_checkpoint(model_path)
+
+        model.eval()
+        return model
+
+    except Exception as e:
+        st.error(f"Error loading COMET model: {str(e)}")
+        st.code(traceback.format_exc())
+        return None
 
 
 # ---------- Excel helper ----------
@@ -145,10 +160,13 @@ try:
     apply_hf_token_from_secrets_or_env()
     print("STEP 1: HF_TOKEN applied", flush=True)
 
-    with st.spinner("Loading COMET model (first run may take a few minutes)..."):
-        print("STEP 2: loading COMET model", flush=True)
-        model = get_comet_model_cached()
-        print("STEP 3: COMET model loaded", flush=True)
+    if SKIP_MODEL:
+        st.warning("SKIP_MODEL enabled (debug). Not loading COMET.")
+        st.stop()
+
+    with st.spinner("Loading COMET model (this may take a few minutes on first run)..."):
+        model = get_comet_model()
+
 
     # Save upload to a temp path for ElementTree parsing
     suffix = Path(uploaded_file.name).suffix
